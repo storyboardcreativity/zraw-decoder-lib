@@ -9,20 +9,20 @@ typedef struct ZRawFrameVersion_s
 
 typedef struct ZRawFrameParameters_s
 {
-    uint32_t pattern;     // Type of bayer pattern
-    uint32_t compression; // Compression mode (0 - encoded, 1 - raw)
-    uint32_t __is_lossless_0;
-    uint32_t width;
-    uint32_t height;
-    uint32_t bitdepth_above_8; // = (bitdepth_real - 8) / 2
-    uint32_t __is_lossless_1;
-    uint32_t is_stride_enabled;
-    uint32_t line_stride;
+    uint32_t bayer_mode;        // Type of bayer pattern
+    uint32_t cmp_mode;          // Compression mode (0 - encoded, 1 - raw)
+    uint32_t is_lossless;
+    uint32_t frame_width;
+    uint32_t frame_height;
+    uint32_t frame_bitdepth;    // = (bitdepth_real - 8) / 2
+    uint32_t part_cmp_en;
+    uint32_t stride_en;
+    uint32_t stride;
     uint32_t align_mode;
-    uint32_t debug;
-    uint32_t noise_level_2;
-    uint32_t noise_level_1;
-    uint32_t noise_level_distance;
+    uint32_t debug_mode;
+    uint32_t nl2_num_thr;
+    uint32_t nl1_num_thr;
+    uint32_t noise_grad_thr;
 } ZRawFrameParameters_t;
 
 #define ZRAW_DEFECTIVE_PIXELS_MAX 0x4000

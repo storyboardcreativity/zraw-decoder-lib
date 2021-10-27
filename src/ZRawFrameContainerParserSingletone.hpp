@@ -117,43 +117,67 @@ private:
     {
         struct // sizeof == 176
         {
-            uint32_t pattern;
-            uint32_t compression;
-            uint32_t __is_lossless_0;
-            uint32_t width;
-            uint32_t height;
-            uint32_t bitdepth_above_8;
-            uint32_t __is_lossless_1;
-            uint32_t __unk1;
-            uint32_t __unk2;
-            uint32_t is_stride_enabled;
-            uint32_t line_stride;
+            uint32_t bayer_mode;
+            uint32_t cmp_mode;
+            uint32_t is_lossless;
+            uint32_t frame_width;
+            uint32_t frame_height;
+            uint32_t frame_bitdepth;
+            uint32_t part_cmp_en;
+            uint32_t pcmp_start_hpos;
+            uint32_t pcmp_end_hpos;
+            uint32_t stride_en;
+            uint32_t stride;
             uint32_t align_mode;
-            uint32_t debug;
-            uint32_t budget_mb_bits;
-            uint32_t __unk3[15];
+            uint32_t debug_mode;
+            uint32_t mb_bits;
+            uint32_t smth_thr;
+            uint32_t still_thr;
+            uint32_t big_grad_thr;
+            uint32_t smth_pix_num_thr;
+            uint32_t still_pix_num_thr;
+            uint32_t noise_pix_num_thr;
+            uint32_t qp_inc1_bits_thr;
+            uint32_t qp_inc2_bits_thr;
+            uint32_t qp_dec1_bits_thr;
+            uint32_t qp_dec2_bits_thr;
+            uint32_t min_mb_bits;
+            uint32_t qp_force_en;
+            uint32_t first_mb_adj_bits;
+            uint32_t first_row_adj_bits;
+            uint32_t first_col_adj_bits;
             uint32_t buffer_init_bits;
-            uint32_t __unk4[11];
-            uint32_t noise_level_2;
-            uint32_t noise_level_1;
-            uint32_t noise_level_distance;
+            uint32_t buf_fullness_thr_reg0;
+            uint32_t buf_fullness_thr_reg1;
+            uint32_t buf_fullness_thr_reg2;
+            uint32_t qp_rge_reg0;
+            uint32_t qp_rge_reg1;
+            uint32_t qp_rge_reg2;
+            uint32_t bits_offset_reg0;
+            uint32_t bits_offset_reg1;
+            uint32_t bits_offset_reg2;
+            uint32_t est_err_gain_map;
+            uint32_t smooth_status_thr;
+            uint32_t nl2_num_thr;
+            uint32_t nl1_num_thr;
+            uint32_t noise_grad_thr;
         } data;
         stream.read((char *)&data, sizeof(data));
 
-        frame.Parameters().pattern = data.pattern;
-        frame.Parameters().compression = data.compression;
-        frame.Parameters().__is_lossless_0 = data.__is_lossless_0;
-        frame.Parameters().width = data.width;
-        frame.Parameters().height = data.height;
-        frame.Parameters().bitdepth_above_8 = data.bitdepth_above_8;
-        frame.Parameters().__is_lossless_1 = data.__is_lossless_1;
-        frame.Parameters().is_stride_enabled = data.is_stride_enabled;
-        frame.Parameters().line_stride = data.line_stride;
+        frame.Parameters().bayer_mode = data.bayer_mode;
+        frame.Parameters().cmp_mode = data.cmp_mode;
+        frame.Parameters().is_lossless = data.is_lossless;
+        frame.Parameters().frame_width = data.frame_width;
+        frame.Parameters().frame_height = data.frame_height;
+        frame.Parameters().frame_bitdepth = data.frame_bitdepth;
+        frame.Parameters().part_cmp_en = data.part_cmp_en;
+        frame.Parameters().stride_en = data.stride_en;
+        frame.Parameters().stride = data.stride;
         frame.Parameters().align_mode = data.align_mode;
-        frame.Parameters().debug = data.debug;
-        frame.Parameters().noise_level_2 = data.noise_level_2;
-        frame.Parameters().noise_level_1 = data.noise_level_1;
-        frame.Parameters().noise_level_distance = data.noise_level_distance;
+        frame.Parameters().debug_mode = data.debug_mode;
+        frame.Parameters().nl2_num_thr = data.nl2_num_thr;
+        frame.Parameters().nl1_num_thr = data.nl1_num_thr;
+        frame.Parameters().noise_grad_thr = data.noise_grad_thr;
 
         return sizeof(data);
     }
@@ -374,7 +398,7 @@ private:
         uint32_t len = 0;
         
         // Read each frame line
-        for (int i = 0; i < frame.Parameters().height; ++i)
+        for (int i = 0; i < frame.Parameters().frame_height; ++i)
         {
             // Read image line header (line bytes * 16 count)
             uint16_t count = 0;
@@ -382,7 +406,7 @@ private:
             len += 2;
 
             // Check for stride errors
-            if (frame.Parameters().line_stride < count + 1)
+            if (frame.Parameters().stride < count + 1)
             {
                 printf("Stride error!\n");
                 exit(-1);

@@ -28,7 +28,7 @@ public:
             exit(-1);
         }
 
-        uint32_t real_bitdepth = frame.Parameters().bitdepth_above_8 * 2 + 8;
+        uint32_t real_bitdepth = frame.Parameters().frame_bitdepth * 2 + 8;
         uint32_t colors_count = 2 << (real_bitdepth - 1);
         uint32_t lut_el_count = colors_count & 0x1FFFE;
 
@@ -81,8 +81,8 @@ public:
         }
 
         // Correct CFA with lut
-        uint32_t w = frame.Parameters().width / 2;
-        uint32_t h = frame.Parameters().height / 2;
+        uint32_t w = frame.Parameters().frame_width / 2;
+        uint32_t h = frame.Parameters().frame_height / 2;
 
         for (int i = 0; i < h; ++i)
             for (int p = 0; p < w; ++p)
