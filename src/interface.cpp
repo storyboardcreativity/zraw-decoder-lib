@@ -65,6 +65,7 @@ extern "C" LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__decompress_hisi_fr
         return ZRAW_DECODER_STATE__INVALID_INSTANCE;
 
     ZRawFrameDecompressorSingletone::Instance().DecompressFrame(it->second->frame__get());
+    ZRawFramePreProcessorSingletone::Instance().PreProcess(it->second->frame__get());
 
     return ZRAW_DECODER_STATE__FRAME_IS_DECOMPRESSED;
 }
