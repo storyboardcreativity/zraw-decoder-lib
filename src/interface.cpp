@@ -69,6 +69,29 @@ extern "C" LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__decompress_hisi_fr
     return ZRAW_DECODER_STATE__FRAME_IS_DECOMPRESSED;
 }
 
+// Writes decompressed CFA to external buffer
+extern "C" LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__get_decompressed_CFA(ZRAW_DECODER_HANDLE decoder, uint16_t* cfa_buffer_out, int32_t size)
+{
+    auto it = g_zraw_decoding_contexts.find(decoder);
+    if (it == g_zraw_decoding_contexts.end())
+        return ZRAW_DECODER_STATE__INVALID_INSTANCE;
+
+    zraw_frame_info_t info;
+    auto state = zraw_decoder__get_hisi_frame_info(decoder, info);
+
+    if (size < info.width_in_photodiodes * info.height_in_photodiodes * sizeof(uint16_t))
+        return ZRAW_DECODER_STATE__NO_SPACE_TO_WRITE_CFA;
+
+    auto decoder_instance = it->second;
+    auto pixels = decoder_instance->frame__get().Pixels();
+
+    for (int y = 0; y < info.height_in_photodiodes; ++y)
+        for (int x = 0; x < info.width_in_photodiodes; ++x)
+            cfa_buffer_out[y * info.width_in_photodiodes + x] = pixels[y][x];
+
+    return ZRAW_DECODER_STATE__STANDBY;
+}
+
 // Frees decoder
 extern "C" LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__free(ZRAW_DECODER_HANDLE decoder)
 {

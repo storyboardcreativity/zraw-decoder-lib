@@ -35,10 +35,15 @@ typedef enum zraw_decoder_state_e
 {
     ZRAW_DECODER_STATE__INVALID_INSTANCE = 0,
     ZRAW_DECODER_STATE__STANDBY,
+
+    ZRAW_DECODER_STATE__NO_SPACE_TO_WRITE_CFA,
+
     ZRAW_DECODER_STATE__FRAME_IS_READ,
     ZRAW_DECODER_STATE__FRAME_READING_FAILED,
+
     ZRAW_DECODER_STATE__FRAME_IS_DECOMPRESSED,
     ZRAW_DECODER_STATE__FRAME_DECOMPRESSION_FAILED,
+
     ZRAW_DECODER_STATE__INSTANCE_IS_REMOVED
 } zraw_decoder_state_t;
 
@@ -57,6 +62,9 @@ extern "C" {
 
     // Processes initialized frame data
     LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__decompress_hisi_frame(ZRAW_DECODER_HANDLE decoder);
+
+    // Writes decompressed CFA to external buffer
+    LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__get_decompressed_CFA(ZRAW_DECODER_HANDLE decoder, uint16_t* cfa_buffer_out, int32_t size);
 
     // Frees decoder
     LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__free(ZRAW_DECODER_HANDLE decoder);
