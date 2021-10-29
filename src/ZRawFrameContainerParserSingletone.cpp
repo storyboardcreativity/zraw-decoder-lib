@@ -309,9 +309,9 @@ int32_t ZRawFrameContainerParserSingletone::_processColorCorrectionMatricesBlock
 
     struct // sizeof == 40
     {
-        uint16_t a;
+        uint16_t correlated_color_temperature;
         uint16_t __gap;
-        uint32_t b[9];
+        uint32_t values[9];
     } matrices[10];
 
     if (sizeof(matrices) < data_size - 4)
@@ -338,9 +338,9 @@ int32_t ZRawFrameContainerParserSingletone::_processColorCorrectionMatricesBlock
     // Save read matrices info
     for (int i = 0; i < matrices_count; ++i)
     {
-        frame.ColorCorrectionMatrices().matrices[i].a = matrices[i].a;
-        for (int p = 0; p < matrices_count; ++p)
-            frame.ColorCorrectionMatrices().matrices[i].b[p] = matrices[i].b[p];
+        frame.ColorCorrectionMatrices().matrices[i].correlated_color_temperature = matrices[i].correlated_color_temperature;
+        for (int p = 0; p < 9; ++p)
+            frame.ColorCorrectionMatrices().matrices[i].values[p] = matrices[i].values[p];
     }
 
     return len;

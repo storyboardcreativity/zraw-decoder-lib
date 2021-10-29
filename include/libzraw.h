@@ -28,6 +28,13 @@ typedef struct zraw_frame_info_s
     uint32_t height_in_photodiodes;
     uint32_t bits_per_photodiode_value;
 
+    uint32_t awb_gain_r;
+    uint32_t awb_gain_g;
+    uint32_t awb_gain_b;
+
+    uint16_t cfa_black_levels[4];
+
+    uint16_t wb_in_K;
 } zraw_frame_info_t;
 #pragma pack(pop)
 

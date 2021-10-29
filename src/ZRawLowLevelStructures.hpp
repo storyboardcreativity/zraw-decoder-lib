@@ -62,8 +62,8 @@ typedef struct ZRawFrameColorCorretionMatrices_s
     uint32_t matrices_count;
     struct
     {
-        uint16_t a;
-        uint32_t b[9];
+        uint16_t correlated_color_temperature;
+        int32_t values[9];
     } matrices[ZRAW_COLOR_CORRETION_MATRICES_MAX];
 } ZRawFrameColorCorretionMatrices_t;
 
