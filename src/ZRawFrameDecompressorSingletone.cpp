@@ -80,8 +80,6 @@ void ZRawFrameDecompressorSingletone::DecompressFrame(ZRawFrame &frame)
     }
 
     _post_process_correct_bayer(frame);
-
-    ZRawFramePreProcessorSingletone::Instance().PreProcess(frame);
 }
 
 void ZRawFrameDecompressorSingletone::_post_process_correct_bayer(ZRawFrame &frame)

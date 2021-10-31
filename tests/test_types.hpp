@@ -103,7 +103,7 @@ typedef struct ZRAW_block_dpc_s
         header.block_magic = ZRAW_TEST_HEADER_NAME_MACRO('d', 'p', 'c', ' ');
         header.block_size = bswap_32(sizeof(ZRAW_block_dpc_s));
 
-        data.tables_count = bswap_32(ZRAW_TEST_DPC_TABLES_COUNT);
+        data.iso_num = bswap_32(ZRAW_TEST_DPC_TABLES_COUNT);
         for(int i = 0; i < ZRAW_TEST_DPC_TABLES_COUNT; ++i)
         {
             data.tables[i].bright_pixels_count = bswap_32(sizeof(data.tables[i].bright_pixels_table) / sizeof(uint32_t));
@@ -114,7 +114,7 @@ typedef struct ZRAW_block_dpc_s
     ZRAW_block_header_t header;
     struct
     {
-        uint32_t tables_count;
+        uint32_t iso_num;
         struct
         {
             uint32_t a;

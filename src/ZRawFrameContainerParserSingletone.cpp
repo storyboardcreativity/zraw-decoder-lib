@@ -173,7 +173,7 @@ int32_t ZRawFrameContainerParserSingletone::_processDefectivePixelsCorrectionBlo
     uint32_t tables_count = 0;
     stream.read((char *)&tables_count, 4);
     tables_count = bswap_32(tables_count);
-    frame.DefectionPixelsTable().tables_count = tables_count;
+    frame.DefectionPixelsTable().iso_num = tables_count;
     len += 4;
 
     if (tables_count > 32)

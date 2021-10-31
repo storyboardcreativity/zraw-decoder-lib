@@ -28,7 +28,7 @@ typedef struct ZRawFrameParameters_s
 #define ZRAW_DEFECTIVE_PIXELS_MAX 0x4000
 typedef struct ZRawFrameDefectivePixelsInfo_s
 {
-    uint32_t tables_count;
+    uint32_t iso_num;
     struct
     {
         uint32_t a;
