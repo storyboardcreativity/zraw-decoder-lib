@@ -3,11 +3,6 @@
 #include <istream>
 #include <string.h>
 
-// For AES decryption
-#include <openssl/aes.h>
-#include <openssl/conf.h>
-#include <openssl/evp.h>
-
 #include "byteswap.hpp"
 #include "ZRawFrame.hpp"
 

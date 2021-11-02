@@ -1,3 +1,8 @@
+// For AES decryption
+#include <openssl/aes.h>
+#include <openssl/conf.h>
+#include <openssl/evp.h>
+
 #include "ZRawFrameContainerParserSingletone.hpp"
 
 ZRawFrameContainerParserSingletone* ZRawFrameContainerParserSingletone::_instance = nullptr;
