@@ -8,13 +8,21 @@ All ZRAW bitstreams, created on Z CAM cameras with firmware version before v0.94
 
 ### How to build?
 
-##### For Ubuntu:
+#### For Ubuntu:
 
 0. You just need `libcrypto`, `libpthread` and `libstdc++` to build this code.
 
 1. Type `make` and have fun!
 
 2. To use library just include `./include/libzraw.h` to your C/C++ project and link with `./build/libzraw.so` after building it.
+
+#### For Windows:
+
+0. You need Visual Studio 2017 + environment variable OPENSSL_INSTALL_DIR that points to your OpenSSL installation folder
+
+1. Run `MSBuild.exe vc2017/zraw-decoder-lib.sln` from a `Developer Command Promt for VS 2017` (or open `vc2017/zraw-decoder-lib.sln` and build it from Visual Studio) and have fun!
+
+2. To use library just include `./include/libzraw.h` to your C/C++ project and link with `./build/libzraw.lib` after building it.
 
 ##### Testing:
 
