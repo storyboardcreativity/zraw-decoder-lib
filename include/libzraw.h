@@ -7,7 +7,11 @@ typedef void* ZRAW_DECODER_HANDLE;
     #ifdef LIB_ZRAW_COMPILING
     #   define LIB_ZRAW_PUBLIC __declspec(dllexport)
     #else
-    #   define LIB_ZRAW_PUBLIC __declspec(dllimport)
+        #ifndef LIB_ZRAW_STATIC
+        #   define LIB_ZRAW_PUBLIC __declspec(dllimport)
+        #else
+        #   define LIB_ZRAW_PUBLIC
+        #endif
     #endif
 #elif __GNUC__
     // GCC
