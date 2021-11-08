@@ -2,17 +2,24 @@
 
 #include <istream>
 #include <stdexcept>
+#include <vector>
+#include <cstdint>
 
 class BitReader
 {
 public:
-    BitReader(std::istream &stream)
+    BitReader(std::istream &stream, bool cached)
         : _stream(stream),
           _curr_byte(0x00),
           _bits_left_in_curr_byte(0),
-          _position_in_bits(0)
+          _position_in_bits(0),
+          _cached_bytes_curr_pos(0),
+          _cached(cached)
     {
         _stream.seekg(0, _stream.beg);
+
+        if (cached)
+            _cached_bytes = std::vector<char>((std::istreambuf_iterator<char>(_stream)), std::istreambuf_iterator<char>());
     }
 
     uint64_t ReadBits(uint32_t bit_count)
@@ -48,7 +55,10 @@ public:
     void SeekToBit(uint64_t bit_index)
     {
         uint64_t byte_index = bit_index / 8;
-        _stream.seekg(byte_index, _stream.beg);
+        if (_cached)
+            _cached_bytes_curr_pos = byte_index;
+        else
+            _stream.seekg(byte_index, _stream.beg);
 
         // Reset counters and refresh current byte
         _bits_left_in_curr_byte = 0;
@@ -87,7 +97,15 @@ private:
         if (_bits_left_in_curr_byte == 0)
         {
             // Read next byte
-            _stream.read((char *)&_curr_byte, 1);
+            if (_cached)
+            {
+                ++_cached_bytes_curr_pos;
+                if (_cached_bytes_curr_pos >= _cached_bytes.size())
+                    throw std::exception("Attempt to get cached byte out of bounds!");
+                _curr_byte = _cached_bytes[_cached_bytes_curr_pos];
+            }
+            else
+                _stream.read((char *)&_curr_byte, 1);
 
             // Refresh left bits counter
             _bits_left_in_curr_byte = 8;
@@ -117,4 +135,8 @@ private:
     uint8_t _curr_byte;
     int _bits_left_in_curr_byte;
     uint64_t _position_in_bits;
+
+    std::vector<char> _cached_bytes;
+    int _cached_bytes_curr_pos;
+    bool _cached;
 };

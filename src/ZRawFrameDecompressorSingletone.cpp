@@ -42,8 +42,8 @@ void ZRawFrameDecompressorSingletone::DecompressFrame(ZRawFrame &frame)
     {
         std::istrstream databuf_stream(reinterpret_cast<const char *>(frame.Data()[i].data()), frame.Data()[i].size());
 
-        // Create bitreader for line
-        BitReader line_reader(databuf_stream);
+        // Create bitreader for line (cached)
+        BitReader line_reader(databuf_stream, true);
 
         // This flag is true on each second line
         bool upper_field = (i & 1) == 0;
