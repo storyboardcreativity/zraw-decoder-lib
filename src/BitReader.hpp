@@ -99,9 +99,7 @@ private:
             // Read next byte
             if (_cached)
             {
-                if (_cached_bytes_curr_pos >= _cached_bytes.size())
-                    throw std::exception("Attempt to get cached byte out of bounds!");
-                _curr_byte = _cached_bytes[_cached_bytes_curr_pos];
+                _curr_byte = _cached_bytes_curr_pos >= _cached_bytes.size() ? 0x00 : _cached_bytes[_cached_bytes_curr_pos];
                 ++_cached_bytes_curr_pos;
             }
             else
