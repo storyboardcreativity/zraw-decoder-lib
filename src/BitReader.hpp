@@ -99,10 +99,10 @@ private:
             // Read next byte
             if (_cached)
             {
-                ++_cached_bytes_curr_pos;
                 if (_cached_bytes_curr_pos >= _cached_bytes.size())
                     throw std::exception("Attempt to get cached byte out of bounds!");
                 _curr_byte = _cached_bytes[_cached_bytes_curr_pos];
+                ++_cached_bytes_curr_pos;
             }
             else
                 _stream.read((char *)&_curr_byte, 1);
