@@ -76,8 +76,6 @@ public:
         bool is_last_block_read = false;
         while (!is_last_block_read)
             is_last_block_read = ReadNext();
-
-        return;
     }
 
     bool ReadNext()
@@ -92,7 +90,7 @@ public:
         _initBlockParameters();
 
         if (_decoding_mode == 0x100000001)
-            throw new NotImplemented(); // Raw block reading mode is not implemented
+            _readNextBlockRawMode(_current_line_index > 0);
         else
             _readNextBlockVariableLengthMode(_current_line_index > 0);
 
@@ -230,6 +228,45 @@ private:
             // Save last read values
             _line_a[_current_block_index][i] = _context_a.last_new_read_values[0];
             _line_bc[_current_block_index][i] = _context_b.last_new_read_values[0];
+        }
+    }
+
+    void _readNextBlockRawMode(bool isPrevLineDependant)
+    {
+        for (int i = 0; i < ZRAW_LINE_BLOCK_SIZE && _read_values_count < _param.max_values_count; ++i, ++_read_values_count)
+        {
+            // Set pixel values from prev line
+            _context_a.last_old_read_values[0] = isPrevLineDependant ? _line_a_prev[_current_block_index][i] : _param.default_pix_value;
+            _context_b.last_old_read_values[0] = isPrevLineDependant ?
+                (_is_upper_field_line() ? _line_b_prev : _line_c_prev)[_current_block_index][i] : _param.default_pix_value;
+
+            auto val1 = _reader().ReadBits(_param.bitdepth_real - _parameters_raw_mode.a);
+            auto val2 = _reader().ReadBits(_param.bitdepth_real - _parameters_raw_mode.a);
+
+            // Save new read pixel value
+            _context_a.last_new_read_values[0] = val1 << _parameters_raw_mode.a;
+            auto old = _context_b.last_new_read_values[0];
+            _context_b.last_new_read_values[0] = val2 << _parameters_raw_mode.a;
+
+            _collectNoiseLevelStatistics(_context_a, _param.noise_level_distance);
+
+            // Shift last read values in contexts
+            for (int p = 2; p > 0; --p)
+            {
+                // For the first component
+                _context_a.last_new_read_values[p] = _context_a.last_new_read_values[p - 1];
+                _context_a.last_old_read_values[p] = _context_a.last_old_read_values[p - 1];
+
+                // For the second component
+                _context_b.last_new_read_values[p] = _context_b.last_new_read_values[p - 1];
+                _context_b.last_old_read_values[p] = _context_b.last_old_read_values[p - 1];
+            }
+
+            // Save last read values
+            _line_a[_current_block_index][i] = _context_a.last_new_read_values[0];
+            _line_bc[_current_block_index][i] = _context_b.last_new_read_values[0];
+
+            _context_b.last_new_read_values[0] = old;
         }
     }
 

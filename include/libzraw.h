@@ -55,7 +55,10 @@ typedef enum zraw_decoder_state_e
     ZRAW_DECODER_STATE__FRAME_IS_DECOMPRESSED,
     ZRAW_DECODER_STATE__FRAME_DECOMPRESSION_FAILED,
 
-    ZRAW_DECODER_STATE__INSTANCE_IS_REMOVED
+    ZRAW_DECODER_STATE__INSTANCE_IS_REMOVED,
+
+    ZRAW_DECODER_STATE__EXCEPTION,
+    ZRAW_DECODER_STATE__UNEXPECTED_FAILURE
 } zraw_decoder_state_t;
 
 #ifdef __cplusplus
@@ -79,6 +82,9 @@ extern "C" {
 
     // Frees decoder
     LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__free(ZRAW_DECODER_HANDLE decoder);
+
+    // Returns last exception message
+    LIB_ZRAW_PUBLIC const char* zraw_decoder__exception_message();
 
 #ifdef __cplusplus
 }
