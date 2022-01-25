@@ -43,11 +43,11 @@ public:
     ZRawImageLineBlockReader(Parameters param)
         : _param(param), _read_values_count(0), _current_line_index(0),
           _current_block_index(0), _noise_level(0), _noise_less_than_distance_count(0),
-          _line_a(param.blocks_count, param.default_pix_value),
-          _line_bc(param.blocks_count, param.default_pix_value),
-          _line_a_prev(param.blocks_count, param.default_pix_value),
-          _line_b_prev(param.blocks_count, param.default_pix_value),
-          _line_c_prev(param.blocks_count, param.default_pix_value)
+          _line_a(param.blocks_count, param.max_values_count, param.default_pix_value),
+          _line_bc(param.blocks_count, param.max_values_count, param.default_pix_value),
+          _line_a_prev(param.blocks_count, param.max_values_count, param.default_pix_value),
+          _line_b_prev(param.blocks_count, param.max_values_count, param.default_pix_value),
+          _line_c_prev(param.blocks_count, param.max_values_count, param.default_pix_value)
     {
         memset(noise_levels, 0x00, sizeof(noise_levels));
 

@@ -8,8 +8,11 @@
 class ZRawImageBlockLine
 {
 public:
-    ZRawImageBlockLine(uint32_t block_count, uint16_t default_value)
-        : _values(std::vector<uint16_t>(block_count * ZRAW_LINE_BLOCK_SIZE, default_value)),
+    ZRawImageBlockLine(uint32_t block_count, uint32_t max_values, uint16_t default_value)
+        : _values(std::vector<uint16_t>(
+            block_count * ZRAW_LINE_BLOCK_SIZE > max_values ?
+            max_values :
+            block_count * ZRAW_LINE_BLOCK_SIZE, default_value)),
           _header_values(block_count, 0) {}
 
     uint16_t *operator[](const int index)
