@@ -1,3 +1,4 @@
+#pragma once
 #include <stdint.h>
 
 typedef void* ZRAW_DECODER_HANDLE;
