@@ -124,9 +124,6 @@ public:
 
         ++_current_line_index;
 
-        // Clean line noise level
-        _noise_level = 0;
-
         // Reset block counter
         _current_block_index = 0;
 
