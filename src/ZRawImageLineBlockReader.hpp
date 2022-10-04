@@ -302,19 +302,38 @@ private:
         int a = _getValueBitSizeMinus1_ButMax6(_context_a.g);
         int b = _getValueBitSizeMinus1_ButMax6(_context_b.g);
 
+        // Pre-read data
+        uint64_t data = _reader().ShowBits(48);
+
         // Read component A most significant bits
-        uint32_t msb_a = _readHuffmanValue();
+        uint32_t size_in_bits_of_msb_a = 0;
+        uint32_t msb_a = _readHuffmanValue(data, size_in_bits_of_msb_a);
+        data >>= size_in_bits_of_msb_a;
 
         // Read component B most significant bits
-        uint32_t msb_b = _readHuffmanValue();
+        uint32_t size_in_bits_of_msb_b = 0;
+        uint32_t msb_b = _readHuffmanValue(data, size_in_bits_of_msb_b);
+        data >>= size_in_bits_of_msb_b;
 
         // Read component A least significant bits
         uint32_t lsb_a_size = msb_a == 12 ? default_lsb_size : a;
-        uint32_t lsb_a = _reader().ReadBits(lsb_a_size);
+        uint32_t lsb_a = 0;
+        if (lsb_a_size > 0)
+        {
+            lsb_a = ((data << (64 - lsb_a_size)) >> (64 - lsb_a_size));
+            data >>= lsb_a_size;
+        }
 
         // Read component B least significant bits
         uint32_t lsb_b_size = msb_b == 12 ? default_lsb_size : b;
-        uint32_t lsb_b = _reader().ReadBits(lsb_b_size);
+        uint32_t lsb_b = 0;
+        if (lsb_b_size > 0)
+        {
+            lsb_b = ((data << (64 - lsb_b_size)) >> (64 - lsb_b_size));
+            data >>= lsb_b_size;
+        }
+
+        _reader().FlushBits(size_in_bits_of_msb_a + size_in_bits_of_msb_b + lsb_a_size + lsb_b_size);
 
         // Construct component values
         int value_a = msb_a == 12 ? lsb_a + 1 : (msb_a << lsb_a_size) | lsb_a;
@@ -362,7 +381,7 @@ private:
 
         // ===
 
-        // Fix component A value
+        // Fix component B value
         pixel_value = _unmodValue(
             _parameters_vl_mode.b * complement_b + predicted_offset_b,
             _parameters_vl_mode.d, _param.max_allowed_pixel_value,
@@ -402,97 +421,61 @@ private:
         return i;
     }
 
-    uint32_t _readHuffmanValue()
+    uint32_t _readHuffmanValue(uint32_t data_in, uint32_t& size_in_bits_out)
     {
-        uint32_t current_dword = _reader().ShowBits(32);
-        uint32_t value = 0;
-        uint32_t value_length_in_bits = 0;
-
-        // swap_bits(1) => 0
-        if ((current_dword & 1) == 1)
+        int i = 0;
+        for (; i < 9; ++i)
         {
-            value = 0;
-            value_length_in_bits = 1;
-        }
-        // swap_bits(10) => 1
-        else if ((current_dword & 3) == 2)
-        {
-            value = 1;
-            value_length_in_bits = 2;
-        }
-        // swap_bits(100) => 2
-        else if ((current_dword & 7) == 4)
-        {
-            value = 2;
-            value_length_in_bits = 3;
-        }
-        // swap_bits(1000) => 3
-        else if ((current_dword & 0xF) == 8)
-        {
-            value = 3;
-            value_length_in_bits = 4;
-        }
-        // swap_bits(10000) => 4
-        else if ((current_dword & 0x1F) == 16)
-        {
-            value = 4;
-            value_length_in_bits = 5;
-        }
-        // swap_bits(0100000) => 5
-        else if ((current_dword & 0x7F) == 32)
-        {
-            value = 5;
-            value_length_in_bits = 7;
-        }
-        // swap_bits(1100000) => 6
-        else if ((current_dword & 0x7F) == 96)
-        {
-            value = 6;
-            value_length_in_bits = 7;
-        }
-        // swap_bits(01000000) => 7
-        else if ((uint8_t)current_dword == 64)
-        {
-            value = 7;
-            value_length_in_bits = 8;
-        }
-        // swap_bits(11000000) => 8
-        else if ((uint8_t)current_dword == 192)
-        {
-            value = 8;
-            value_length_in_bits = 8;
-        }
-        // If it's 9-bit length non-null value
-        else if (current_dword & 0x1FF)
-        {
-            switch (current_dword & 0x1FF)
-            {
-            case 0x100u:
-                // swap_bits(100000000) => 10
-                value = 10;
-                value_length_in_bits = 9;
+            if (data_in & 1)
                 break;
-            case 0x80u:
-                // swap_bits(010000000) => 11
-                value = 11;
-                value_length_in_bits = 9;
-                break;
-            case 0x180u:
-                // swap_bits(110000000) => 12 (8, 1)
-                value = 12;
-                value_length_in_bits = 9;
-                break;
-            }
-        }
-        // swap_bits(000000000) => 9
-        else
-        {
-            value = 9;
-            value_length_in_bits = 9;
+            data_in >>= 1;
         }
 
-        _reader().FlushBits(value_length_in_bits);
-        return value;
+        switch (i)
+        {
+        case 0:
+            size_in_bits_out = 1;
+            return 0;
+
+        case 1:
+            size_in_bits_out = 2;
+            return 1;
+
+        case 2:
+            size_in_bits_out = 3;
+            return 2;
+
+        case 3:
+            size_in_bits_out = 4;
+            return 3;
+
+        case 4:
+            size_in_bits_out = 5;
+            return 4;
+
+        case 5:
+            size_in_bits_out = 7;
+            return ((data_in & 3) == 1 ? 5 : 6);
+
+        case 6:
+            size_in_bits_out = 8;
+            return ((data_in & 3) == 1 ? 7 : 8);
+
+        case 7:
+            size_in_bits_out = 9;
+            return ((data_in & 3) == 1 ? 11 : 12);
+
+        case 8:
+            size_in_bits_out = 9;
+            return 10;
+
+        default:
+            break;
+        }
+
+        // default (000000000)
+        size_in_bits_out = 9;
+        return 9;
     }
 
     int _fixPrediction(int p1, int p2, int value)
