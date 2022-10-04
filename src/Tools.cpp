@@ -42,36 +42,38 @@ void __post_process_b(ZRawImageBlockLine &line, int noise_level)
 {
     std::vector<uint16_t> tmp(line.Line().size(), 0x0000);
 
-    for (uint32_t i = 0; i < line.Line().size(); ++i)
+    auto& line_vec = line.Line();
+
+    for (uint32_t i = 0; i < line_vec.size(); ++i)
     {
         int block_header_val = 1 << line.HeaderValues()[i / ZRAW_LINE_BLOCK_SIZE];
 
-        int index0 = round(0, i - 2, line.Line().size());
-        int index1 = round(0, i - 1, line.Line().size());
-        int index2 = round(0, i, line.Line().size());
-        int index3 = round(0, i + 1, line.Line().size());
-        int index4 = round(0, i + 2, line.Line().size());
+        int index0 = round(0, i - 2, line_vec.size());
+        int index1 = round(0, i - 1, line_vec.size());
+        int index2 = round(0, i, line_vec.size());
+        int index3 = round(0, i + 1, line_vec.size());
+        int index4 = round(0, i + 2, line_vec.size());
 
         if (noise_level)
         {
             if (noise_level == 1)
-                tmp[i] = (4 * line.Line()[index3] + 8 * line.Line()[index2] + 4 * line.Line()[index1] + 8) / 16;
+                tmp[i] = ((line_vec[index3] << 2) + (line_vec[index2] << 3) + (line_vec[index1] << 2) + 8) >> 4;
             else
-                tmp[i] = (2 * line.Line()[index4] + 4 * line.Line()[index3] + 4 * line.Line()[index2] + 4 * line.Line()[index1] + 2 * line.Line()[index0] + 8) / 16;
+                tmp[i] = ((line_vec[index4] << 1) + (line_vec[index3] << 2) + (line_vec[index2] << 2) + (line_vec[index1] << 2) + (line_vec[index0] << 1) + 8) >> 4;
         }
         else
         {
-            int v18 = (line.Line()[index3] + 2 * line.Line()[index2] + line.Line()[index1] + 2) / 4;
-            int offset = block_header_val / 2;
-            
-            if (v18 - line.Line()[index2] <= block_header_val / 2)
-                offset = (v18 - line.Line()[index2] >= -block_header_val / 2) ? v18 - line.Line()[index2] : -block_header_val / 2;
-                
-            tmp[i] = offset + line.Line()[index2];
+            int v18 = (line_vec[index3] + 2 * line_vec[index2] + line_vec[index1] + 2) >> 2;
+            int offset = (block_header_val >> 1);    // block_header_val / 2;
+
+            if (v18 - line_vec[index2] <= offset)
+                offset = (v18 - line_vec[index2] >= -offset) ? v18 - line_vec[index2] : -offset;
+
+            tmp[i] = offset + line_vec[index2];
         }
     }
-    
-    memcpy(line.Line().data(), tmp.data(), line.Line().size() * sizeof(uint16_t));
+
+    memcpy(line_vec.data(), tmp.data(), line_vec.size() * sizeof(uint16_t));
 }
 
 void __post_process_truncate(std::vector<uint16_t> &line, int real_bitdepth, int diff)
@@ -79,7 +81,7 @@ void __post_process_truncate(std::vector<uint16_t> &line, int real_bitdepth, int
     int bit_count = real_bitdepth - diff;
     if (bit_count < 0)
         bit_count = 0;
-    
+
     for (uint32_t i = 0; i < line.size(); ++i)
         line[i] = (signed int)line[i] >> bit_count << bit_count;
 }
@@ -139,6 +141,6 @@ uint32_t __estimate_noise_level(int noise_level_1, int noise_level_2, int less_t
         __place_noise_level(less_than_distance_pix_count < noise_level_1, noise_levels);
     else
         __place_noise_level(2u, noise_levels);
-    
+
     return __select_noise_level(noise_levels);
 }
