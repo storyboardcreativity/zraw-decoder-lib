@@ -402,17 +402,10 @@ int32_t ZRawFrameContainerParserSingletone::_processFrameDataBlock(std::istream&
         }
 
         // Read image line data (-sizeof(uint16_t) because we've read an uint16_t before)
-        std::vector<uint8_t> line_data;
-        for (int p = 0; p < (16 * (count + 1) - sizeof(uint16_t)) / 2; ++p)
-        {
-            uint16_t data;
-            stream.read((char *)&data, sizeof(uint16_t));
-            len += 2;
-
-            // Save read line cell value
-            line_data.push_back(((uint8_t *)&data)[0]);
-            line_data.push_back(((uint8_t *)&data)[1]);
-        }
+        uint32_t words_count = (16 * (count + 1) - sizeof(uint16_t)) / 2;
+        std::vector<uint8_t> line_data(sizeof(uint16_t) * words_count);
+        stream.read((char *)line_data.data(), sizeof(uint16_t) * words_count);
+        len += line_data.size();
 
         // Save frame line data
         frame.Data().push_back(line_data);
