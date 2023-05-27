@@ -1,5 +1,8 @@
 #include "ZRawFrameDecompressorSingletone.hpp"
 
+#include "ZRawImageLineBinaryParser.hpp"
+#include "ZRawPostShaderProcessLinesSequentially.hpp"
+
 ZRawFrameDecompressorSingletone* ZRawFrameDecompressorSingletone::_instance = nullptr;
 
 ZRawFrameDecompressorSingletone& ZRawFrameDecompressorSingletone::Instance()
@@ -20,24 +23,12 @@ void ZRawFrameDecompressorSingletone::DecompressFrame(ZRawFrame &frame)
 
     uint32_t linebuf_default_value = 1 << ((frame.Parameters().frame_bitdepth * 2 + 8) - 1);
 
-    ZRawImageLineBlockReader::Parameters param;
-    param.default_pix_value = linebuf_default_value;
-    param.bitdepth_real = frame.Parameters().frame_bitdepth * 2 + 8;
-    param.max_allowed_pixel_value = (1 << param.bitdepth_real) - 1;
-    param.max_allowed_raw_value = 255;
-    param.max_values_count = frame.Parameters().frame_width / 2;
-    param.blocks_count = ((signed int)frame.Parameters().frame_width / 2 + 31) / 32;
-    param.stride = frame.Parameters().stride;
-    param.align_mode = frame.Parameters().align_mode;
-    param.lossless = !(frame.Parameters().is_lossless == 0 && frame.Parameters().part_cmp_en == 0);
-    param.bayer_pattern = frame.Parameters().bayer_mode;
-    param.noise_level_1 = frame.Parameters().nl1_num_thr;
-    param.noise_level_2 = frame.Parameters().nl2_num_thr;
-    param.noise_level_distance = frame.Parameters().noise_grad_thr;
+    uint16_t** frame_low_level_data = new uint16_t*[frame.Parameters().frame_height];
 
-    ZRawImageLineBlockReader block_reader(param);
+    std::vector<std::vector<uint32_t>> frame_block_header_values;
+    std::vector<std::vector<int>> frame_block_is_vl;
 
-    // Process each compressed line
+    // Step 1: decode lines using Golomb and Huffman
     for (int i = 0; i < frame.Parameters().frame_height; ++i)
     {
         std::istrstream databuf_stream(reinterpret_cast<const char *>(frame.Data()[i].data()), frame.Data()[i].size());
@@ -48,37 +39,63 @@ void ZRawFrameDecompressorSingletone::DecompressFrame(ZRawFrame &frame)
         // This flag is true on each second line
         bool upper_field = (i & 1) == 0;
 
-        // DCMPBAYER_V1_TopAvailAna
-
-        // Skip first 16 bits if stride checking is enabled
-        // FIXME: commented because these bits are skipped on reading process
-        //if (frame.Parameters().is_stride_enabled)
-        //    line_reader.ReadBits(16);
+        ZRawImageLineBinaryParser::Parameters paramBin;
+        paramBin.max_allowed_raw_value = 255;
+        paramBin.max_values_count = frame.Parameters().frame_width / 2;
+        paramBin.blocks_count = ((signed int)frame.Parameters().frame_width / 2 + 31) / 32;
+        paramBin.stride = frame.Parameters().stride;
+        paramBin.align_mode = frame.Parameters().align_mode;
+        paramBin.lossless = !(frame.Parameters().is_lossless == 0 && frame.Parameters().part_cmp_en == 0);
+        paramBin.bitdepth_real = frame.Parameters().frame_bitdepth * 2 + 8;
 
         std::vector<uint16_t> line_data;
+        line_data.resize(paramBin.max_values_count * 2);
 
-        block_reader.ReadLine(&line_reader);
-        auto line_a = block_reader.LineA();
-        auto line_b = block_reader.LineB();
+        paramBin.dest = line_data.data();
+        ZRawImageLineBinaryParser bin_line_reader(paramBin);
 
-        for (int i = 0; i < line_a.size(); ++i)
-        {
-            line_data.push_back(line_a[i]);
-            line_data.push_back(line_b[i]);
-        }
+        std::vector<uint32_t> header_values;
+        std::vector<int> is_block_vl;
+        bin_line_reader.Read(&line_reader, header_values, is_block_vl);
+
+        frame_block_header_values.push_back(header_values);
+        frame_block_is_vl.push_back(is_block_vl);
 
         // Save read line to component vectors
         frame.Pixels().push_back(line_data);
 
-        if (frame.Parameters().stride_en)
-        {
-            line_reader.BitAlignTo(128);
-            line_reader.SeekToBit(128 * frame.Parameters().stride * (i + 1));
-        }
-
-        block_reader.FinalizeLine();
+        frame_low_level_data[i] = frame.Pixels()[i].data();
     }
 
+    uint32_t** frame_low_level_block_header_values = new uint32_t*[frame_block_header_values.size()];
+    for (int i = 0; i < frame_block_header_values.size(); ++i)
+        frame_low_level_block_header_values[i] = frame_block_header_values[i].data();
+
+    int** frame_low_level_block_is_vl = new int*[frame_block_is_vl.size()];
+    for (int i = 0; i < frame_block_is_vl.size(); ++i)
+        frame_low_level_block_is_vl[i] = frame_block_is_vl[i].data();
+
+    // Step 2: collect noise level statistics and fix VL pixel values
+    ZRawPostShaderProcessLinesSequentially step_2;
+    step_2.Process(
+        frame_low_level_data,
+        frame_low_level_block_is_vl,
+        frame_low_level_block_header_values,
+        frame.Parameters().bayer_mode,
+        frame.Parameters().frame_width,
+        frame.Parameters().frame_height,
+        linebuf_default_value,
+        frame.Parameters().noise_grad_thr,
+        frame.Parameters().frame_bitdepth * 2 + 8,
+        frame.Parameters().nl1_num_thr,
+        frame.Parameters().nl2_num_thr
+    );
+
+    // Free temp ptr buffers
+    delete[] frame_low_level_data;
+    delete[] frame_low_level_block_header_values;
+
+    // Step 3: correct Bayer pattern
     _post_process_correct_bayer(frame);
 }
 

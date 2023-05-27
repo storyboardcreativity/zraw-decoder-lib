@@ -176,8 +176,9 @@ copy /Y "$(OutDir)$(TargetName)$(TargetExt)" "%build_path%\"
     <ClInclude Include="..\src\ZRawFrameDecompressorSingletone.hpp" />
     <ClInclude Include="..\src\ZRawFramePreProcessorSingletone.hpp" />
     <ClInclude Include="..\src\ZRawImageBlockLine.hpp" />
-    <ClInclude Include="..\src\ZRawImageLineBlockReader.hpp" />
+    <ClInclude Include="..\src\ZRawImageLineBinaryParser.hpp" />
     <ClInclude Include="..\src\ZRawLowLevelStructures.hpp" />
+    <ClInclude Include="..\src\ZRawPostShaderProcessLinesSequentially.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\interface.cpp" />
