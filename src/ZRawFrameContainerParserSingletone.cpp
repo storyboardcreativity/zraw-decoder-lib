@@ -5,6 +5,11 @@
 
 #include "ZRawFrameContainerParserSingletone.hpp"
 
+// Fix for OpenSSL (_OPENSSL_ia32cap_P is undefined on linkage stage)
+// Link: https://stackoverflow.com/questions/42439834/openssl-library-linker-command-failed-openssl-ia32cap-p-in-aes-decoding
+uint32_t OPENSSL_ia32cap_P[4] = { 0 };
+// ---
+
 ZRawFrameContainerParserSingletone* ZRawFrameContainerParserSingletone::_instance = nullptr;
 
 ZRawFrameContainerParserSingletone& ZRawFrameContainerParserSingletone::Instance()
