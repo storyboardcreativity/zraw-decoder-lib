@@ -1,7 +1,5 @@
 #pragma once
 
-#include <strstream>
-
 #include "ZRawFrame.hpp"
 #include "BitReader.hpp"
 #include "ZRawFramePreProcessorSingletone.hpp"
@@ -15,6 +13,4 @@ public:
     static ZRawFrameDecompressorSingletone& Instance();
 
     void DecompressFrame(ZRawFrame& frame);
-
-    void _post_process_correct_bayer(ZRawFrame& frame);
 };

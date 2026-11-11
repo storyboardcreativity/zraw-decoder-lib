@@ -1,171 +1,213 @@
 #pragma once
 
-#include <fstream>
+#include <stdexcept>
 
 #include "BitReader.hpp"
 #include "ZRawImageBlockLine.hpp"
 
+// Step 1: reads the values of one image line. A line is a series of blocks of 32 pairs of values
+// (components A and B). Call ReadBlockHeader() and ReadPairs() for each block, then EndLine().
+// Raw blocks hold pixel values, VL blocks hold codes of the difference to the predicted pixel.
 class ZRawImageLineBinaryParser
 {
 public:
     struct Parameters
     {
         int max_allowed_raw_value;
-        int max_values_count;
-        int blocks_count;
         bool stride;
         int align_mode;
         bool lossless;
         int bitdepth_real;
-
-        uint16_t* dest;
     };
 
     ZRawImageLineBinaryParser(Parameters param)
-        : _param(param), _read_values_count(0), _current_block_index(0),
-          g_a(4), g_b(4) {}
+        : g_a(4), g_b(4), _read_values_count(0), _block_is_raw(false),
+          _bitdepth_diff(0), _param(param), _huffman(_huffmanTable()) {}
 
-    // Returns vector with blocks header values of the image line
-    void Read(BitReader *reader, std::vector<uint32_t>& header_values, std::vector<int>& is_block_vl)
+    // Header value and mode of the block are stored at block_index
+    void ReadBlockHeader(BitReader *reader, int block_index, uint32_t* header_values, int* is_block_vl)
     {
-        bool is_last_block_read = false;
-        while (!is_last_block_read)
-            is_last_block_read = ReadNext(reader, header_values, is_block_vl);
-    }
-
-    bool ReadNext(BitReader *reader, std::vector<uint32_t>& header_values, std::vector<int>& is_block_vl)
-    {
-        if (_current_block_index >= _param.blocks_count)
-            return true;
-
         uint64_t decoding_mode = _readBlockHeader(reader);
 
-        header_values.push_back(_bitdepth_diff);
-        is_block_vl.push_back(decoding_mode != 0x100000001);
+        header_values[block_index] = _bitdepth_diff;
+        is_block_vl[block_index] = decoding_mode != 0x100000001;
 
-        if (decoding_mode == 0x100000001)
-            _readNextBlockRawMode(reader);
-        else
-            _readNextBlockVariableLengthMode(reader);
+        _block_is_raw = decoding_mode == 0x100000001;
+    }
 
-        // Increase block counter
-        ++_current_block_index;
+    // Reads count pairs of the current block and calls handler(value_a, value_b) for each.
+    // The reading state is kept in locals so the handler can be inlined.
+    template <class PairHandler>
+    void ReadPairs(BitReader *reader, int count, PairHandler handler)
+    {
+        uint64_t position = reader->CurrentPositionInBits();
 
-        // If last block is just read
-        if (_current_block_index >= _param.blocks_count)
+        // Near the end of the data the reads need bounds checks.
+        // A pair is at most two 9-bit prefix codes and two full size values.
+        bool is_inside = reader->AreBitsInside(position, (uint64_t)count * (18 + 2 * _param.bitdepth_real));
+
+        if (_block_is_raw)
         {
-            // Alignment after last block
-            if (_param.stride)
-                _alignLastBlock(reader);
-
-            // Last block is read
-            return true;
+            if (is_inside)
+                _readPairsRawMode<false>(reader, position, count, handler);
+            else
+                _readPairsRawMode<true>(reader, position, count, handler);
+        }
+        else
+        {
+            if (is_inside)
+                _readPairsVariableLengthMode<false>(reader, position, count, handler);
+            else
+                _readPairsVariableLengthMode<true>(reader, position, count, handler);
         }
 
-        // Not last block is read
-        return false;
+        reader->SeekToBit(position);
+        _read_values_count += count;
+    }
+
+    void EndLine(BitReader *reader)
+    {
+        // Alignment after last block
+        if (_param.stride)
+            _alignLastBlock(reader);
     }
 
 protected:
 
-    void _readNextBlockRawMode(BitReader *reader)
+    template <bool kCheckEnd>
+    ZRAW_FORCE_INLINE uint64_t _peek(BitReader *reader, uint64_t position)
     {
-        auto dest = _param.dest;
-        for (int i = 0; i < ZRAW_LINE_BLOCK_SIZE && _read_values_count < _param.max_values_count; ++i, ++_read_values_count)
-        {
-            dest[_read_values_count * 2 + 0] = (reader->ReadBits(_param.bitdepth_real - _bitdepth_diff) << _bitdepth_diff);
-            dest[_read_values_count * 2 + 1] = (reader->ReadBits(_param.bitdepth_real - _bitdepth_diff) << _bitdepth_diff);
-        }
+        return kCheckEnd ? reader->PeekAt(position) : reader->PeekAtInside(position);
     }
 
-    void _readNextBlockVariableLengthMode(BitReader *reader)
+    template <bool kCheckEnd, class PairHandler>
+    void _readPairsRawMode(BitReader *reader, uint64_t& position_inout, int count, PairHandler handler)
     {
-        auto dest = _param.dest;
-        for (int i = 0; i < ZRAW_LINE_BLOCK_SIZE && _read_values_count < _param.max_values_count; ++i, ++_read_values_count)
+        uint64_t position = position_inout;
+        const int bitdepth_diff = _bitdepth_diff;
+        const int default_lsb_size = _param.bitdepth_real - bitdepth_diff;
+        const uint64_t mask = (1ull << default_lsb_size) - 1;
+
+        for (int i = 0; i < count; ++i)
         {
-            //std::fstream f_out("file_out_new.txt", std::ios::out | std::ios::app);
+            int32_t value_a = (_peek<kCheckEnd>(reader, position) & mask) << bitdepth_diff;
+            position += default_lsb_size;
+            int32_t value_b = (_peek<kCheckEnd>(reader, position) & mask) << bitdepth_diff;
+            position += default_lsb_size;
 
-            int default_lsb_size = (_param.bitdepth_real - _bitdepth_diff);
+            handler(value_a, value_b);
+        }
 
-            //f_out << "a.g = " << g_a << " b.g = " << g_b;
+        position_inout = position;
+    }
 
-            int a = _getValueBitSizeMinus1_ButMax6(g_a);
-            int b = _getValueBitSizeMinus1_ButMax6(g_b);
+    template <bool kCheckEnd, class PairHandler>
+    void _readPairsVariableLengthMode(BitReader *reader, uint64_t& position_inout, int count, PairHandler handler)
+    {
+        uint64_t position = position_inout;
+        const int default_lsb_size = _param.bitdepth_real - _bitdepth_diff;
 
-            //f_out << " a = " << a << " b = " << b;
+        int ga = g_a, gb = g_b;
+        const int max_allowed_raw_value = _param.max_allowed_raw_value;
+        const HuffmanTable& huffman = _huffman;
 
-            // Pre-read data
-            uint64_t data = reader->ShowBits(48);
+        for (int i = 0; i < count; ++i)
+        {
+            int a = _getValueBitSizeMinus1_ButMax6(ga);
+            int b = _getValueBitSizeMinus1_ButMax6(gb);
+
+            // Pre-read data (the first 48 bits)
+            uint64_t data = _peek<kCheckEnd>(reader, position) & 0xFFFFFFFFFFFFull;
 
             // Read component A most significant bits
-            uint32_t size_in_bits_of_msb_a = 0;
-            uint32_t msb_a = _readHuffmanValue(data, size_in_bits_of_msb_a);
+            uint32_t size_in_bits_of_msb_a = huffman.size[data & 0x1FF];
+            uint32_t msb_a = huffman.value[data & 0x1FF];
             data >>= size_in_bits_of_msb_a;
 
             // Read component B most significant bits
-            uint32_t size_in_bits_of_msb_b = 0;
-            uint32_t msb_b = _readHuffmanValue(data, size_in_bits_of_msb_b);
+            uint32_t size_in_bits_of_msb_b = huffman.size[data & 0x1FF];
+            uint32_t msb_b = huffman.value[data & 0x1FF];
             data >>= size_in_bits_of_msb_b;
-
-            //f_out << " msb_a = " << msb_a << " msb_b = " << msb_b << std::endl;
 
             // Read component A least significant bits
             uint32_t lsb_a_size = msb_a == 12 ? default_lsb_size : a;
-            uint32_t lsb_a = 0;
-            if (lsb_a_size > 0)
-            {
-                lsb_a = ((data << (64 - lsb_a_size)) >> (64 - lsb_a_size));
-                data >>= lsb_a_size;
-            }
+            uint32_t lsb_a = data & ((1ull << lsb_a_size) - 1);
+            data >>= lsb_a_size;
 
             // Read component B least significant bits
             uint32_t lsb_b_size = msb_b == 12 ? default_lsb_size : b;
-            uint32_t lsb_b = 0;
-            if (lsb_b_size > 0)
-            {
-                lsb_b = ((data << (64 - lsb_b_size)) >> (64 - lsb_b_size));
-                data >>= lsb_b_size;
-            }
+            uint32_t lsb_b = data & ((1ull << lsb_b_size) - 1);
 
-            reader->FlushBits(size_in_bits_of_msb_a + size_in_bits_of_msb_b + lsb_a_size + lsb_b_size);
+            position += size_in_bits_of_msb_a + size_in_bits_of_msb_b + lsb_a_size + lsb_b_size;
 
             // Construct component values
             int value_a = msb_a == 12 ? lsb_a + 1 : (msb_a << lsb_a_size) | lsb_a;
             int value_b = msb_b == 12 ? lsb_b + 1 : (msb_b << lsb_b_size) | lsb_b;
 
-            dest[_read_values_count * 2 + 0] = value_a;
-            dest[_read_values_count * 2 + 1] = value_b;
+            handler(value_a, value_b);
 
             // ===
 
-            if (value_a >> a > 11)
-                --value_a;
-            value_a = _roundValue(0, value_a, _param.max_allowed_raw_value);
+            value_a -= (value_a >> a) > 11;
+            value_a = _roundValue(0, value_a, max_allowed_raw_value);
 
             // Calculate block context next value
-            g_a = (2 * value_a + 2 * g_a + 2) / 4;
+            ga = (2 * value_a + 2 * ga + 2) / 4;
 
             // ===
 
-            if (value_b >> b > 11)
-                --value_b;
-            value_b = _roundValue(0, value_b, _param.max_allowed_raw_value);
+            value_b -= (value_b >> b) > 11;
+            value_b = _roundValue(0, value_b, max_allowed_raw_value);
 
             // Calculate block context next value
-            g_b = (2 * value_b + 2 * g_b + 2) / 4;
+            gb = (2 * value_b + 2 * gb + 2) / 4;
         }
+
+        g_a = ga;
+        g_b = gb;
+        position_inout = position;
     }
 
-    int _getValueBitSizeMinus1_ButMax6(int value)
+    // Same as: for (i = 0; i < 6; ++i) if (!(value >> (i + 1))) break; return i;
+    ZRAW_FORCE_INLINE int _getValueBitSizeMinus1_ButMax6(int value)
     {
-        int i = 0;
-        for (; i < 6; ++i)
-            if (!(value >> (i + 1)))
-                break;
-        return i;
+        static const uint8_t sizes[65] =
+        {
+            0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
+            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+            5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+            5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+            6
+        };
+        return sizes[(unsigned)value > 64 ? 64 : value];
     }
 
-    uint32_t _readHuffmanValue(uint32_t data_in, uint32_t& size_in_bits_out)
+    // _readHuffmanValue for every 9-bit prefix
+    struct HuffmanTable
+    {
+        uint8_t value[512];
+        uint8_t size[512];
+    };
+
+    static const HuffmanTable& _huffmanTable()
+    {
+        static const HuffmanTable table = _buildHuffmanTable();
+        return table;
+    }
+
+    static HuffmanTable _buildHuffmanTable()
+    {
+        HuffmanTable table;
+        for (uint32_t i = 0; i < 512; ++i)
+        {
+            uint32_t size_in_bits = 0;
+            table.value[i] = _readHuffmanValue(i, size_in_bits);
+            table.size[i] = size_in_bits;
+        }
+        return table;
+    }
+
+    static uint32_t _readHuffmanValue(uint32_t data_in, uint32_t& size_in_bits_out)
     {
         int i = 0;
         for (; i < 9; ++i)
@@ -227,7 +269,7 @@ protected:
         reader->BitAlignTo(_param.align_mode == 1 ? 256 : 128);
     }
 
-    int _roundValue(int left, int value, int right)
+    ZRAW_FORCE_INLINE int _roundValue(int left, int value, int right)
     {
         if (value > right)
             value = right;
@@ -269,17 +311,21 @@ protected:
         else
             _bitdepth_diff = reader->ReadBits(4);
 
+        // The shifts need 0 <= diff <= bitdepth (only damaged data gets here)
+        if (_bitdepth_diff < 0 || _bitdepth_diff > _param.bitdepth_real)
+            throw std::runtime_error("ZRAW block header: bit depth difference is out of range");
+
         // Read block decoding mode
         return reader->ReadBits(1) ? 0x100000001 : 0x0;
     }
 
     int g_a, g_b;
 
-    int _current_block_index;
     int _read_values_count;
-    uint64_t _decoding_mode;
+    bool _block_is_raw;
 
     int _bitdepth_diff;
 
     Parameters _param;
+    const HuffmanTable& _huffman;
 };

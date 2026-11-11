@@ -1,6 +1,6 @@
 CC := gcc
 CFL := -shared -fPIC -fvisibility=hidden -fvisibility-inlines-hidden
-CFL_OBJS := -ggdb -std=c++11 -Wno-deprecated -fPIC -c -fvisibility=hidden -fvisibility-inlines-hidden
+CFL_OBJS := -O2 -ggdb -std=c++11 -Wno-deprecated -fPIC -c -fvisibility=hidden -fvisibility-inlines-hidden
 CFL_TESTS := -ggdb -std=c++11 -fPIC -Wno-deprecated -fvisibility=hidden -fvisibility-inlines-hidden
 TOOLCHAIN :=
 OUT_LIBRARY_NAME := zraw

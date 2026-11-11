@@ -1,54 +1,48 @@
 #pragma once
 
-#include <istream>
 #include <stdexcept>
-#include <vector>
 #include <cstdint>
+#include <cstddef>
 #include <cstring>
 
+// The pixel reading loops need these small functions inlined
+#ifndef ZRAW_FORCE_INLINE
+#if defined(_MSC_VER)
+#define ZRAW_FORCE_INLINE __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+#define ZRAW_FORCE_INLINE inline __attribute__((always_inline))
+#else
+#define ZRAW_FORCE_INLINE inline
+#endif
+#endif
+
+// Reads bits, least significant bit first, from a block of memory.
+// Reading past the end gives zero bits. Loads 8 bytes at a time, so it needs a little-endian CPU.
 class BitReader
 {
 public:
-    BitReader(std::istream &stream, bool cached)
-        : _stream(stream),
-          _curr_bytes(0x00),
-          _bits_left_in_curr_bytes(0),
-          _position_in_bits(0),
-          _cached_bytes_curr_pos(0),
-          _cached(cached)
-    {
-        _stream.seekg(0, _stream.beg);
+    BitReader(const uint8_t *data, size_t size)
+        : _data(data),
+          _size(size),
+          _position_in_bits(0) {}
 
-        if (cached)
-        {
-            _cached_bytes = std::vector<char>((std::istreambuf_iterator<char>(_stream)), std::istreambuf_iterator<char>());
-            _cached_size = _cached_bytes.size();
-        }
-    }
-
+    // Up to 57 bits at once
     uint64_t ReadBits(uint32_t bit_count)
     {
         if (bit_count == 0)
             return 0;
 
-        if (bit_count > sizeof(uint64_t) * 8)
-            throw new std::invalid_argument("bit_count can't be more than 64!");
+        if (bit_count > 57)
+            throw std::invalid_argument("bit_count can't be more than 57!");
 
-        return _getBits(bit_count);
+        uint64_t res = _peek(_position_in_bits) & ((1ull << bit_count) - 1);
+        _position_in_bits += bit_count;
+        return res;
     }
 
     void FlushBits(uint32_t bit_count)
     {
-        // Fast variant if we have cached bits
-        if (bit_count <= _bits_left_in_curr_bytes)
-        {
-            _bits_left_in_curr_bytes -= bit_count;
-            _position_in_bits += bit_count;
-            _curr_bytes >>= bit_count;
-            return;
-        }
-
-        SeekToBit(CurrentPositionInBits() + bit_count);
+        _position_in_bits += bit_count;
     }
 
     void BitAlignTo(uint32_t value)
@@ -63,46 +57,19 @@ public:
 
     void SeekToBit(uint64_t bit_index)
     {
-        uint64_t byte_index = bit_index / 8;
-        if (_cached)
-            _cached_bytes_curr_pos = byte_index;
-        else
-            _stream.seekg(byte_index, _stream.beg);
-
-        // Reset counters and refresh current byte
-        _bits_left_in_curr_bytes = 0;
         _position_in_bits = bit_index;
-
-        // Here we know that (_bits_left_in_curr_bytes == 0) - use unsafe function
-        _refreshCurrentByteUnsafe();
-
-        // Skip last bits
-        _curr_bytes >>= (bit_index % 8);
-        _bits_left_in_curr_bytes -= (bit_index % 8);
     }
 
+    // Up to 57 bits at once, does not move the position
     uint64_t ShowBits(uint32_t bit_count)
     {
-        // Fast variant if we have cached bits
-        if (bit_count <= _bits_left_in_curr_bytes)
-        {
-            uint64_t res = _curr_bytes;
-            res <<= (64 - bit_count);
-            res >>= (64 - bit_count);
-            return res;
-        }
+        if (bit_count == 0)
+            return 0;
 
-        // Save current position
-        uint64_t bits_before = _position_in_bits;
+        if (bit_count > 57)
+            throw std::invalid_argument("bit_count can't be more than 57!");
 
-        // Read bits
-        uint64_t bits_to_show = ReadBits(bit_count);
-
-        // Set carry back to saved position
-        SeekToBit(bits_before);
-
-        // Return result
-        return bits_to_show;
+        return _peek(_position_in_bits) & ((1ull << bit_count) - 1);
     }
 
     uint64_t CurrentPositionInBits()
@@ -110,105 +77,41 @@ public:
         return _position_in_bits;
     }
 
+    // At least 57 bits from the given bit, the reader's own position is not used
+    ZRAW_FORCE_INLINE uint64_t PeekAt(uint64_t position_in_bits) const
+    {
+        return _peek(position_in_bits);
+    }
+
+    // True if PeekAtInside is safe for these bits, it reads 8 bytes and does not check the size
+    bool AreBitsInside(uint64_t position_in_bits, uint64_t bit_count) const
+    {
+        return ((position_in_bits + bit_count) >> 3) + 8 <= _size;
+    }
+
+    ZRAW_FORCE_INLINE uint64_t PeekAtInside(uint64_t position_in_bits) const
+    {
+        uint64_t bytes;
+        std::memcpy(&bytes, _data + (position_in_bits >> 3), 8);
+        return bytes >> (position_in_bits & 7);
+    }
+
 private:
-    void _refreshCurrentByte()
+    ZRAW_FORCE_INLINE uint64_t _peek(uint64_t position_in_bits) const
     {
-        // If we have no bits left in current byte
-        if (_bits_left_in_curr_bytes == 0)
-            _refreshCurrentByteUnsafe();
+        uint64_t byte_index = position_in_bits >> 3;
+        uint64_t bytes = 0;
+
+        // Fewer than 8 bytes are left at the end, the rest reads as zeros
+        if (byte_index + 8 <= _size)
+            std::memcpy(&bytes, _data + byte_index, 8);
+        else if (byte_index < _size)
+            std::memcpy(&bytes, _data + byte_index, _size - byte_index);
+
+        return bytes >> (position_in_bits & 7);
     }
 
-    void _refreshCurrentByteUnsafe()
-    {
-        // Read next byte
-        if (_cached)
-        {
-            _curr_bytes = 0;
-            int32_t left = (_cached_size - _cached_bytes_curr_pos);
-            int32_t sz_to_read = left > ((int32_t)sizeof(_curr_bytes)) ? sizeof(_curr_bytes) : left;
-
-            if (sz_to_read > 0)
-                std::memcpy(&_curr_bytes, &_cached_bytes.data()[_cached_bytes_curr_pos], sz_to_read);
-
-            _cached_bytes_curr_pos += sizeof(_curr_bytes);
-        }
-        else
-            _stream.read((char *)&_curr_bytes, sizeof(_curr_bytes));
-
-        // Refresh left bits counter
-        _bits_left_in_curr_bytes = sizeof(_curr_bytes) * 8;
-    }
-
-    bool _getNextBit()
-    {
-        // Refresh current byte in case we have no bits left
-        _refreshCurrentByte();
-
-        // Get current bit
-        bool result = _curr_bytes & 0x01;
-
-        // Make next bit current
-        _curr_bytes >>= 1;
-
-        // Refresh bit counters
-        --_bits_left_in_curr_bytes;
-        ++_position_in_bits;
-
-        // Return saved bit
-        return result;
-    }
-
-    uint64_t _getBits(uint64_t bit_count)
-    {
-        // Refresh current byte in case we have no bits left
-        _refreshCurrentByte();
-
-        if (bit_count > _bits_left_in_curr_bytes)
-        {
-            uint64_t res_a = _curr_bytes;
-            res_a <<= (64 - _bits_left_in_curr_bytes);
-            res_a >>= (64 - _bits_left_in_curr_bytes);
-            uint64_t res_a_sz = _bits_left_in_curr_bytes;
-
-            bit_count -= _bits_left_in_curr_bytes;
-            _position_in_bits += _bits_left_in_curr_bytes;
-            _bits_left_in_curr_bytes = 0;
-
-            // Here we know that (_bits_left_in_curr_bytes == 0) - use unsafe function
-            _refreshCurrentByteUnsafe();
-
-            uint64_t res_b = _curr_bytes;
-            res_b <<= (64 - bit_count);
-            res_b >>= (64 - bit_count);
-
-            _bits_left_in_curr_bytes -= bit_count;
-            _position_in_bits += bit_count;
-
-            _curr_bytes >>= bit_count;
-
-            return (res_a | (res_b << res_a_sz));
-        }
-
-        uint64_t res = _curr_bytes;
-        res <<= (64 - bit_count);
-        res >>= (64 - bit_count);
-
-        _bits_left_in_curr_bytes -= bit_count;
-        _position_in_bits += bit_count;
-
-        _curr_bytes >>= bit_count;
-
-        return res;
-    }
-
-    std::istream &_stream;
-    uint64_t _curr_bytes;
-    int _bits_left_in_curr_bytes;
+    const uint8_t *_data;
+    size_t _size;
     uint64_t _position_in_bits;
-
-    std::vector<char> _cached_bytes;
-    int64_t _cached_size;
-
-    int _cached_bytes_curr_pos;
-    bool _cached;
 };

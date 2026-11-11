@@ -1,7 +1,9 @@
 #define LIB_ZRAW_COMPILING
 #include <libzraw.h>
 
+#include <cstring>
 #include <map>
+#include <mutex>
 #include <strstream>
 
 #include <ZRawFrame.hpp>
@@ -16,9 +18,19 @@ private:
     ZRawFrame frame;
 };
 
+// The map is shared between threads, every access takes the lock
 std::map<void*, ZrawDecoderContext*> g_zraw_decoding_contexts;
+std::mutex g_zraw_decoding_contexts_mutex;
 
-std::string g_last_exception_message;
+// Per thread, so a thread reads the message of its own failed call
+thread_local std::string g_last_exception_message;
+
+static ZrawDecoderContext* find_context(void* decoder)
+{
+    std::lock_guard<std::mutex> lock(g_zraw_decoding_contexts_mutex);
+    auto it = g_zraw_decoding_contexts.find(decoder);
+    return it == g_zraw_decoding_contexts.end() ? nullptr : it->second;
+}
 
 // Creates decoder
 extern "C" LIB_ZRAW_PUBLIC ZRAW_DECODER_HANDLE zraw_decoder__create()
@@ -26,7 +38,16 @@ extern "C" LIB_ZRAW_PUBLIC ZRAW_DECODER_HANDLE zraw_decoder__create()
     try
     {
         auto context = new ZrawDecoderContext;
-        g_zraw_decoding_contexts[context] = context;
+        try
+        {
+            std::lock_guard<std::mutex> lock(g_zraw_decoding_contexts_mutex);
+            g_zraw_decoding_contexts[context] = context;
+        }
+        catch (...)
+        {
+            delete context;
+            throw;
+        }
         return context;
     }
     catch(...)
@@ -40,15 +61,15 @@ extern "C" LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__read_hisi_frame(ZR
 {
     try
     {
-        auto it = g_zraw_decoding_contexts.find(decoder);
-        if (it == g_zraw_decoding_contexts.end())
+        auto context = find_context(decoder);
+        if (context == nullptr)
             return ZRAW_DECODER_STATE__INVALID_INSTANCE;
 
         // Create stream for data
         std::istrstream databuf_stream(reinterpret_cast<const char *>(data), max_size);
 
         // Parse ZRAW structure
-        ZRawFrameContainerParserSingletone::Instance().ParseFrame(it->second->frame__get(), databuf_stream);
+        ZRawFrameContainerParserSingletone::Instance().ParseFrame(context->frame__get(), databuf_stream);
     }
     catch (const std::exception& ex)
     {
@@ -67,11 +88,9 @@ extern "C" LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__get_hisi_frame_inf
 {
     try
     {
-        auto it = g_zraw_decoding_contexts.find(decoder);
-        if (it == g_zraw_decoding_contexts.end())
+        auto decoder_instance = find_context(decoder);
+        if (decoder_instance == nullptr)
             return ZRAW_DECODER_STATE__INVALID_INSTANCE;
-
-        auto decoder_instance = it->second;
 
         auto& params = decoder_instance->frame__get().Parameters();
         info_out.width_in_photodiodes = params.frame_width;
@@ -129,11 +148,11 @@ extern "C" LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__decompress_hisi_fr
 {
     try
     {
-        auto it = g_zraw_decoding_contexts.find(decoder);
-        if (it == g_zraw_decoding_contexts.end())
+        auto context = find_context(decoder);
+        if (context == nullptr)
             return ZRAW_DECODER_STATE__INVALID_INSTANCE;
 
-        ZRawFrameDecompressorSingletone::Instance().DecompressFrame(it->second->frame__get());
+        ZRawFrameDecompressorSingletone::Instance().DecompressFrame(context->frame__get());
         //ZRawFramePreProcessorSingletone::Instance().PreProcess(it->second->frame__get());
     }
     catch (const std::exception& ex)
@@ -154,22 +173,21 @@ extern "C" LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__get_decompressed_C
 {
     try
     {
-        auto it = g_zraw_decoding_contexts.find(decoder);
-        if (it == g_zraw_decoding_contexts.end())
+        auto decoder_instance = find_context(decoder);
+        if (decoder_instance == nullptr)
             return ZRAW_DECODER_STATE__INVALID_INSTANCE;
 
-        zraw_frame_info_t info;
-        auto state = zraw_decoder__get_hisi_frame_info(decoder, info);
+        auto& params = decoder_instance->frame__get().Parameters();
+        const size_t width = params.frame_width;
+        const size_t height = params.frame_height;
 
-        if (size < info.width_in_photodiodes * info.height_in_photodiodes * sizeof(uint16_t))
+        if (size < 0 || (size_t)size < width * height * sizeof(uint16_t))
             return ZRAW_DECODER_STATE__NO_SPACE_TO_WRITE_CFA;
 
-        auto decoder_instance = it->second;
-        auto pixels = decoder_instance->frame__get().Pixels();
+        auto& pixels = decoder_instance->frame__get().Pixels();
 
-        for (int y = 0; y < info.height_in_photodiodes; ++y)
-            for (int x = 0; x < info.width_in_photodiodes; ++x)
-                cfa_buffer_out[y * info.width_in_photodiodes + x] = pixels[y][x];
+        for (size_t y = 0; y < height; ++y)
+            memcpy(cfa_buffer_out + y * width, pixels[y].data(), width * sizeof(uint16_t));
     }
     catch (const std::exception& ex)
     {
@@ -189,12 +207,19 @@ extern "C" LIB_ZRAW_PUBLIC zraw_decoder_state_t zraw_decoder__free(ZRAW_DECODER_
 {
     try
     {
-        auto it = g_zraw_decoding_contexts.find(decoder);
-        if (it == g_zraw_decoding_contexts.end())
-            return ZRAW_DECODER_STATE__INVALID_INSTANCE;
+        ZrawDecoderContext* context;
+        {
+            std::lock_guard<std::mutex> lock(g_zraw_decoding_contexts_mutex);
+            auto it = g_zraw_decoding_contexts.find(decoder);
+            if (it == g_zraw_decoding_contexts.end())
+                return ZRAW_DECODER_STATE__INVALID_INSTANCE;
 
-        delete it->second;
-        g_zraw_decoding_contexts.erase(it);
+            context = it->second;
+            g_zraw_decoding_contexts.erase(it);
+        }
+
+        // Deleted outside the lock, freeing a frame takes a while
+        delete context;
     }
     catch (const std::exception& ex)
     {
